@@ -1,14 +1,13 @@
-import React, { useState, useEffect, useRef, Suspense } from 'react'
-import { Canvas, useFrame, useLoader } from '@react-three/fiber'
-import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader'
-import { Environment } from '@react-three/drei'
+import React, { useState, useEffect, useRef } from 'react'
+import { Canvas, useFrame } from '@react-three/fiber'
 import { Vector3 } from 'three'
 import './App.css'
+import ShowroomEnvironment from './components/ShowroomEnvironment'
+import CarModel from './components/CarModel'
+import CameraController from './components/CameraController'
 
 // Global scroll state
 let currentScrollProgress = 0
-
-// Gelişmiş section konfigürasyonu
 const sections = [
   {
     id: 1,
@@ -16,10 +15,10 @@ const sections = [
     description: "Geleceğin elektrikli SUV'u. Çevreci teknoloji ve premium tasarımın mükemmel birleşimi.",
     icon: "🚗",
     color: "#3b82f6",
-    carPosition: new Vector3(1.5, -1.2, -1.5),
-    carRotation: 0,
-    carRotationX: 0,
-    carScale: 2
+    // Kamera pozisyonları - Önden bakış (daha yakın)
+    cameraPosition: new Vector3(3.5, 0.5, 7),
+    cameraTarget: new Vector3(0, -0.3, 2),
+    cameraFov: 50
   },
   {
     id: 2,
@@ -27,10 +26,10 @@ const sections = [
     description: "18'' alüminyum alaşım jantlar. 235/55 R18 premium lastikler ile mükemmel yol tutuş.",
     icon: "⚡",
     color: "#ef4444",
-    carPosition: new Vector3(5, -0.8, -2),
-    carRotation: -Math.PI / 2,
-    carRotationX: 0,
-    carScale: 3.2
+    // Kamera pozisyonları - Yan taraftan jantlara odaklanma (daha yakın)
+    cameraPosition: new Vector3(4, -1, 3.2),
+    cameraTarget: new Vector3(-8, -1.5, 2),
+    cameraFov: 55
   },
   {
     id: 3,
@@ -38,10 +37,10 @@ const sections = [
     description: "400 litre bagaj hacmi. 1000 litre toplam bagaj hacmi. 1000 litre toplam bagaj hacmi.",
     icon: "⚙️",
     color: "#f59e0b",
-    carPosition: new Vector3(1.6, -1, -1),
-    carRotation: Math.PI,
-    carRotationX: 0,
-    carScale: 2
+    // Kamera pozisyonları - Arkadan bagaj görünümü (daha yakın)
+    cameraPosition: new Vector3(3, 0, -7.5),
+    cameraTarget: new Vector3(0, 0, 0),
+    cameraFov: 52
   },
   {
     id: 4,
@@ -49,10 +48,10 @@ const sections = [
     description: "60.5 kWh LFP batarya. AC 11kW & DC 70kW hızlı şarj. 8 yıl garanti ile güvenli.",
     icon: "🔋",
     color: "#10b981",
-    carPosition: new Vector3(2, -0.5, -1),
-    carRotation: 0,
-    carRotationX: -Math.PI / 2, // -90° X ekseni - TABAN görünümü!
-    carScale: 2.5
+    // Kamera pozisyonları - Alttan/çapraz batarya görünümü (daha yakın)
+    cameraPosition: new Vector3(1, 5.8, -1.5),
+    cameraTarget: new Vector3(-4,-30,-1.4),
+    cameraFov: 60
   }
 ]
 
@@ -64,84 +63,6 @@ const easeInOutCubic = (t) => {
 // Daha gelişmiş easing - çok smooth
 const easeInOutQuart = (t) => {
   return t < 0.5 ? 8 * t * t * t * t : 1 - Math.pow(-2 * t + 2, 4) / 2
-}
-
-// Araba modeli komponenti - Discrete scroll için optimize
-function CarModel() {
-  const carRef = useRef()
-  
-  useFrame((state) => {
-    if (carRef.current) {
-      // Current section config'i al
-      const currentSection = sections[Math.floor(currentScrollProgress * (sections.length - 1))] || sections[0]
-      const currentSectionIndex = Math.floor(currentScrollProgress * (sections.length - 1))
-      
-      // Direct assignment - No interpolation between sections anymore
-      const targetPosition = currentSection.carPosition.clone()
-      const targetRotationY = currentSection.carRotation
-      const targetRotationX = currentSection.carRotationX || 0
-      const targetScale = currentSection.carScale
-      
-      // Özel yavaşlık faktörleri - Section 3↔4 arası ekstra yavaş
-      const isSection3or4 = currentSectionIndex === 2 || currentSectionIndex === 3
-      const basePositionSpeed = 0.01 // %50 daha yavaş (0.02 -> 0.01)
-      const baseRotationSpeed = 0.015 // %50 daha yavaş (0.03 -> 0.015) 
-      const baseScaleSpeed = 0.0125 // %50 daha yavaş (0.025 -> 0.0125)
-      
-      // Section 3↔4 arası ekstra yavaşlık
-      const positionSpeed = isSection3or4 ? basePositionSpeed * 0.6 : basePositionSpeed // %40 daha yavaş
-      const rotationSpeed = isSection3or4 ? baseRotationSpeed * 0.5 : baseRotationSpeed // %50 daha yavaş  
-      const scaleSpeed = isSection3or4 ? baseScaleSpeed * 0.7 : baseScaleSpeed // %30 daha yavaş
-      
-      // Ultra slow smooth interpolation - Cinematic premium feel
-      carRef.current.position.lerp(targetPosition, positionSpeed)
-      
-      // Y Rotation smooth assignment - Ekstra yavaş
-      let currentCarRotationY = carRef.current.rotation.y
-      let rotationDiffY = targetRotationY - currentCarRotationY
-      
-      // Normalize rotation difference for smooth transitions
-      while (rotationDiffY > Math.PI) {
-        rotationDiffY -= 2 * Math.PI
-      }
-      while (rotationDiffY < -Math.PI) {
-        rotationDiffY += 2 * Math.PI
-      }
-      
-      carRef.current.rotation.y = currentCarRotationY + rotationDiffY * rotationSpeed
-      
-      // X Rotation smooth assignment - Ekstra yavaş (özellikle Section 4 için önemli)
-      let currentCarRotationX = carRef.current.rotation.x
-      let rotationDiffX = targetRotationX - currentCarRotationX
-      
-      carRef.current.rotation.x = currentCarRotationX + rotationDiffX * rotationSpeed
-      
-      // Scale smooth assignment - Ekstra yavaş
-      const currentScale = carRef.current.scale.x
-      carRef.current.scale.setScalar(currentScale + (targetScale * 0.01 - currentScale) * scaleSpeed)
-      
-      // Floating animation - Section 4'te kapalı
-      if (currentSectionIndex !== 3) { // Section 4 değilse floating yap
-        carRef.current.position.y += Math.sin(state.clock.elapsedTime * 0.6) * 0.005
-      }
-    }
-  })
-  
-  try {
-    const fbx = useLoader(FBXLoader, "./BYD.FBX")
-    
-    return (
-      <primitive 
-        ref={carRef} 
-        object={fbx} 
-        scale={0.012} 
-        position={[0, 0, 0]}
-      />
-    )
-  } catch (error) {
-    console.error("Araba modeli yüklenemedi:", error)
-    return <LoadingFallback />
-  }
 }
 
 // Yükleme fallback - İyileştirilmiş
@@ -163,198 +84,6 @@ function LoadingFallback() {
         <meshStandardMaterial color="#3b82f6" wireframe />
       </mesh>
     </group>
-  )
-}
-
-// Showroom Arka Planı - Araba Galerisi
-function ShowroomBackground() {
-  const floorsRef = useRef()
-  
-  useFrame((state) => {
-    if (floorsRef.current) {
-      // Çok hafif rotation efekti
-      floorsRef.current.rotation.y += 0.0002
-    }
-  })
-  
-  return (
-    <group ref={floorsRef}>
-      {/* Ana zemin - Parlak showroom zeminı */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -2, 0]} receiveShadow>
-        <planeGeometry args={[100, 100]} />
-        <meshStandardMaterial 
-          color="#1a1a1a" 
-          metalness={0.9}
-          roughness={0.1}
-          envMapIntensity={1}
-        />
-      </mesh>
-      
-      {/* Arka duvar */}
-      <mesh position={[0, 8, -20]}>
-        <planeGeometry args={[100, 20]} />
-        <meshStandardMaterial 
-          color="#2a2a2a" 
-          metalness={0.3}
-          roughness={0.7}
-        />
-      </mesh>
-      
-      {/* Sol duvar */}
-      <mesh position={[-20, 8, 0]} rotation={[0, Math.PI / 2, 0]}>
-        <planeGeometry args={[40, 20]} />
-        <meshStandardMaterial 
-          color="#252525" 
-          metalness={0.2}
-          roughness={0.8}
-        />
-      </mesh>
-      
-      {/* Sağ duvar */}
-      <mesh position={[20, 8, 0]} rotation={[0, -Math.PI / 2, 0]}>
-        <planeGeometry args={[40, 20]} />
-        <meshStandardMaterial 
-          color="#252525" 
-          metalness={0.2}
-          roughness={0.8}
-        />
-      </mesh>
-      
-      {/* Tavan */}
-      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 18, 0]}>
-        <planeGeometry args={[100, 100]} />
-        <meshStandardMaterial 
-          color="#1f1f1f" 
-          metalness={0.1}
-          roughness={0.9}
-        />
-      </mesh>
-      
-      {/* Showroom spot ışıkları simülasyonu */}
-      {[...Array(6)].map((_, i) => (
-        <mesh key={i} position={[
-          (i % 3 - 1) * 15, 
-          17, 
-          Math.floor(i / 3) * 15 - 7.5
-        ]}>
-          <cylinderGeometry args={[0.5, 0.8, 0.2, 8]} />
-          <meshBasicMaterial 
-            color="#ffffff"
-            transparent={true}
-            opacity={0.1}
-          />
-        </mesh>
-      ))}
-      
-      {/* Ambient showroom detayları */}
-      <mesh position={[-15, -1.8, -15]}>
-        <boxGeometry args={[2, 0.4, 2]} />
-        <meshStandardMaterial 
-          color="#333333" 
-          metalness={0.8}
-          roughness={0.2}
-        />
-      </mesh>
-      
-      <mesh position={[15, -1.8, -15]}>
-        <boxGeometry args={[2, 0.4, 2]} />
-        <meshStandardMaterial 
-          color="#333333" 
-          metalness={0.8}
-          roughness={0.2}
-        />
-      </mesh>
-    </group>
-  )
-}
-
-// Navigation butonları
-function NavigationButtons({ currentSection, onSectionChange }) {
-  const canGoUp = currentSection > 0
-  const canGoDown = currentSection < sections.length - 1
-  
-  return (
-    <div style={{
-      position: 'fixed',
-      right: '30px',
-      top: '50%',
-      transform: 'translateY(-50%)',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '15px',
-      zIndex: 1000
-    }}>
-      {/* Previous Button */}
-      <button
-        onClick={() => canGoUp && onSectionChange(currentSection - 1)}
-        style={{
-          width: '50px',
-          height: '50px',
-          borderRadius: '50%',
-          border: 'none',
-          background: canGoUp
-            ? `linear-gradient(135deg, ${sections[currentSection]?.color}80, rgba(255, 255, 255, 0.3))`
-            : 'rgba(255, 255, 255, 0.1)',
-          color: canGoUp ? 'white' : 'rgba(255, 255, 255, 0.3)',
-          cursor: canGoUp ? 'pointer' : 'not-allowed',
-          backdropFilter: 'blur(20px)',
-          transition: 'all 0.2s ease',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '18px',
-          boxShadow: canGoUp ? '0 6px 20px rgba(0, 0, 0, 0.2)' : 'none'
-        }}
-      >
-        ⬆️
-      </button>
-      
-      {/* Section Indicators */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', margin: '15px 0' }}>
-        {sections.map((section, index) => (
-          <div
-            key={index}
-            onClick={() => onSectionChange(index)}
-            style={{
-              width: index === currentSection ? '16px' : '10px',
-              height: index === currentSection ? '16px' : '10px',
-              borderRadius: '50%',
-              backgroundColor: index === currentSection ? section.color : 'rgba(255,255,255,0.4)',
-              transition: 'all 0.3s ease',
-              cursor: 'pointer',
-              margin: '0 auto',
-              boxShadow: index === currentSection ? `0 0 15px ${section.color}60` : 'none',
-              border: index === currentSection ? '2px solid white' : 'none'
-            }}
-          />
-        ))}
-      </div>
-      
-      {/* Next Button */}
-      <button
-        onClick={() => canGoDown && onSectionChange(currentSection + 1)}
-        style={{
-          width: '50px',
-          height: '50px',
-          borderRadius: '50%',
-          border: 'none',
-          background: canGoDown
-            ? `linear-gradient(135deg, ${sections[currentSection]?.color}80, rgba(255, 255, 255, 0.3))`
-            : 'rgba(255, 255, 255, 0.1)',
-          color: canGoDown ? 'white' : 'rgba(255, 255, 255, 0.3)',
-          cursor: canGoDown ? 'pointer' : 'not-allowed',
-          backdropFilter: 'blur(20px)',
-          transition: 'all 0.2s ease',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '18px',
-          boxShadow: canGoDown ? '0 6px 20px rgba(0, 0, 0, 0.2)' : 'none'
-        }}
-      >
-        ⬇️
-      </button>
-    </div>
   )
 }
 
@@ -438,40 +167,135 @@ function SectionCard({ section, isVisible }) {
   )
 }
 
-// Mobile-friendly scroll talimatı
+// ScrollInstruction component
 function ScrollInstruction({ currentSection }) {
-  if (currentSection !== 0) return null
+  const [isVisible, setIsVisible] = useState(true)
   
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsVisible(false)
+    }, 4000)
+    
+    return () => clearTimeout(timer)
+  }, [])
+  
+  if (!isVisible || currentSection !== 0) return null
+  
+  return (
+    <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 text-white text-center animate-bounce z-30">
+      <div className="bg-black/20 backdrop-blur-sm rounded-lg px-4 py-2 border border-white/10">
+        <p className="text-sm">↕️ Scroll yapın veya ↑↓ tuşları kullanın</p>
+      </div>
+    </div>
+  )
+}
+
+// Alt Navigation Butonları - INLINE STYLE
+function BottomNavigation({ currentSection, sections, onSectionChange }) {
+  const canGoLeft = currentSection > 0
+  const canGoRight = currentSection < sections.length - 1
+
   return (
     <div style={{
       position: 'fixed',
-      bottom: '30px',
+      bottom: '32px',
       left: '50%',
       transform: 'translateX(-50%)',
-      color: 'rgba(255, 255, 255, 0.8)',
-      background: 'rgba(255, 255, 255, 0.1)',
-      padding: '12px 20px',
-      borderRadius: '25px',
-      backdropFilter: 'blur(20px)',
-      border: '1px solid rgba(255, 255, 255, 0.2)',
-      zIndex: 1000,
-      fontSize: window.innerWidth < 768 ? '12px' : '14px',
-      textAlign: 'center',
-      animation: 'pulse 2s infinite'
+      zIndex: 1000
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
-        <span>{window.innerWidth < 768 ? '📱' : '🖱️'}</span>
-        <span>{window.innerWidth < 768 ? 'Kaydır veya butona bas' : 'Scroll wheel ile section değiştir'}</span>
-      </div>
-      {window.innerWidth >= 768 && (
-        <div style={{ 
-          fontSize: '11px', 
-          marginTop: '5px', 
-          opacity: 0.7 
-        }}>
-          ⌨️ Arrow keys, Space, PageUp/Down da kullanılabilir
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '24px',
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        backdropFilter: 'blur(16px)',
+        borderRadius: '50px',
+        padding: '16px 32px',
+        border: '2px solid rgba(255,255,255,0.3)',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.3)'
+      }}>
+        
+        {/* Sol Buton */}
+        <button
+          onClick={() => canGoLeft && onSectionChange(currentSection - 1)}
+          disabled={!canGoLeft}
+          style={{
+            width: '48px',
+            height: '48px',
+            borderRadius: '50%',
+            border: '2px solid',
+            borderColor: canGoLeft ? '#3b82f6' : 'rgba(128,128,128,0.5)',
+            backgroundColor: canGoLeft ? 'rgba(59, 130, 246, 0.9)' : 'rgba(128,128,128,0.3)',
+            cursor: canGoLeft ? 'pointer' : 'not-allowed',
+            opacity: canGoLeft ? 1 : 0.5,
+            transition: 'all 0.3s ease',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '20px',
+            fontWeight: 'bold',
+            color: 'white'
+          }}
+        >
+          ←
+        </button>
+
+        {/* Section Göstergeleri */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {sections.map((section, index) => (
+            <button
+              key={section.id}
+              onClick={() => onSectionChange(index)}
+              style={{
+                width: index === currentSection ? '56px' : '40px',
+                height: index === currentSection ? '56px' : '40px',
+                borderRadius: '50%',
+                border: '2px solid',
+                borderColor: index === currentSection ? 'white' : 'rgba(255,255,255,0.5)',
+                backgroundColor: index === currentSection ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.25)',
+                color: index === currentSection ? '#1f2937' : 'white',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: index === currentSection ? '20px' : '16px',
+                fontWeight: 'bold',
+                transform: 'scale(1)',
+                boxShadow: index === currentSection ? '0 4px 12px rgba(255,255,255,0.3)' : 'none'
+              }}
+            >
+              {section.icon}
+            </button>
+          ))}
         </div>
-      )}
+
+        {/* Sağ Buton */}
+        <button
+          onClick={() => canGoRight && onSectionChange(currentSection + 1)}
+          disabled={!canGoRight}
+          style={{
+            width: '48px',
+            height: '48px',
+            borderRadius: '50%',
+            border: '2px solid',
+            borderColor: canGoRight ? '#3b82f6' : 'rgba(128,128,128,0.5)',
+            backgroundColor: canGoRight ? 'rgba(59, 130, 246, 0.9)' : 'rgba(128,128,128,0.3)',
+            cursor: canGoRight ? 'pointer' : 'not-allowed',
+            opacity: canGoRight ? 1 : 0.5,
+            transition: 'all 0.3s ease',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '20px',
+            fontWeight: 'bold',
+            color: 'white'
+          }}
+        >
+          →
+        </button>
+        
+      </div>
     </div>
   )
 }
@@ -614,54 +438,21 @@ const App = () => {
   }, [currentSection, isTransitioning])
 
   return (
-    <>
-      {/* Three.js Canvas - Fixed position */}
-      <div style={{ 
-        position: 'fixed', 
-        top: 0, 
-        left: 0, 
-        width: '100%', 
-        height: '100%' 
-      }}>
-        <Canvas 
-          camera={{ 
-            position: [0, 2, isMobile ? 10 : 8], 
-            fov: isMobile ? 50 : 45 
-          }}
-          shadows
-          gl={{ antialias: true }}
-        >
-          <color attach="background" args={["#151515"]} />
-          
-          {/* Profesyonel ışıklandırma */}
-          <ambientLight intensity={1} />
-          <directionalLight 
-            position={[5, 5, 5]} 
-            intensity={1.8} 
-            castShadow
-            shadow-mapSize-width={2048}
-            shadow-mapSize-height={2048}
-          />
-          <directionalLight position={[-5, 5, -5]} intensity={0.8} />
-          <directionalLight position={[0, 5, 5]} intensity={0.6} />
-          <directionalLight position={[0, -3, 0]} intensity={0.4} />
-          
-          {/* Araba modeli */}
-          <Suspense fallback={<LoadingFallback />}>
-            <CarModel />
-            <Environment preset="studio" />
-          </Suspense>
-          
-          {/* Showroom Arka Planı */}
-          <ShowroomBackground />
-        </Canvas>
-      </div>
-      
-      {/* Navigation Butonları */}
-      <NavigationButtons 
-        currentSection={currentSection}
-        onSectionChange={goToSection}
-      />
+    <div className="w-full h-screen relative overflow-hidden" style={{ pointerEvents: 'auto' }}>
+      <Canvas 
+        camera={{ 
+          position: [0, 0.5, 4],
+          fov: 50,
+          near: 0.1, 
+          far: 1000 
+        }}
+        shadows
+        style={{ pointerEvents: 'auto' }}
+      >
+        <CameraController currentSection={currentSection} sections={sections} />
+        <ShowroomEnvironment />
+        <CarModel currentSection={currentSection} sections={sections} />
+      </Canvas>
       
       {/* Section Kartı - Basit ve Çalışır */}
       <SectionCard 
@@ -671,7 +462,14 @@ const App = () => {
       
       {/* Scroll Talimatı */}
       <ScrollInstruction currentSection={currentSection} />
-    </>
+      
+      {/* Alt Navigation Butonları - Sol/Sağ + Section Göstergeleri */}
+      <BottomNavigation 
+        currentSection={currentSection}
+        sections={sections}
+        onSectionChange={goToSection}
+      />
+    </div>
   )
 }
 
